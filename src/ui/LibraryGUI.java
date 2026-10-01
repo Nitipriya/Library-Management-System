@@ -78,6 +78,7 @@ public class LibraryGUI extends JFrame {
         contentPanel.add(createAddMemberPanel(), "addMember");
         contentPanel.add(createIssueBookPanel(), "issueBook");
         contentPanel.add(createReturnBookPanel(), "returnBook");
+        contentPanel.add(createMyBooksPanel(), "myBooks");
 
         add(contentPanel, BorderLayout.CENTER);
 
@@ -138,6 +139,10 @@ public class LibraryGUI extends JFrame {
         sidebar.add(Box.createVerticalStrut(10));
         sidebar.add(createSidebarButton("Issue Book", e -> refreshAndShow("issueBook")));
         sidebar.add(createSidebarButton("Return Book", e -> showPanel("returnBook")));
+        sidebar.add(Box.createVerticalStrut(10));
+        sidebar.add(createSidebarSeparator());
+        sidebar.add(Box.createVerticalStrut(10));
+        sidebar.add(createSidebarButton("My Books", e -> showPanel("myBooks")));
         sidebar.add(Box.createVerticalGlue());
 
         return sidebar;
@@ -309,24 +314,23 @@ public class LibraryGUI extends JFrame {
         JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         inputRow.setBackground(CONTENT_BG);
 
-        JTextField searchField = new JTextField(20);
+        JLabel searchLabel = new JLabel("Search: ");
+        searchLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        inputRow.add(searchLabel);
+
+        JTextField searchField = new JTextField(25);
         searchField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        searchField.setPreferredSize(new Dimension(250, 32));
-
-        JTextField idField = new JTextField(6);
-        idField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        idField.setPreferredSize(new Dimension(80, 32));
-
-        JButton searchByName = createActionButton("Search by Title/Author", SIDEBAR_BTN_HOVER);
-        JButton searchById = createActionButton("Search by ID", SIDEBAR_BTN_HOVER);
-
-        inputRow.add(new JLabel("Keyword: "));
+        searchField.setPreferredSize(new Dimension(300, 32));
+        searchField.setToolTipText("Enter book ID (number) or title/author keyword");
         inputRow.add(searchField);
-        inputRow.add(searchByName);
-        inputRow.add(Box.createHorizontalStrut(20));
-        inputRow.add(new JLabel("Book ID: "));
-        inputRow.add(idField);
-        inputRow.add(searchById);
+
+        JButton searchBtn = createActionButton("Search", SIDEBAR_BTN_HOVER);
+        inputRow.add(searchBtn);
+
+        inputRow.add(Box.createHorizontalStrut(10));
+
+        JButton clearBtn = createActionButton("Clear", new Color(149, 165, 166));
+        inputRow.add(clearBtn);
 
         searchArea.add(inputRow, BorderLayout.NORTH);
 
@@ -342,40 +346,57 @@ public class LibraryGUI extends JFrame {
         resultsPanel.add(new JScrollPane(resultTable), BorderLayout.CENTER);
         searchArea.add(resultsPanel, BorderLayout.CENTER);
 
-        searchByName.addActionListener(e -> {
-            String keyword = searchField.getText().trim();
-            if (keyword.isEmpty()) {
-                setStatus("Please enter a search keyword.", false);
+        // Search button — auto-detects: if input is a number, search by ID; otherwise search by keyword
+        // Demonstrates: Method Overloading — searchBook(int) vs searchBook(String)
+        searchBtn.addActionListener(e -> {
+            String input = searchField.getText().trim();
+            if (input.isEmpty()) {
+                setStatus("Please enter a book ID or keyword to search.", false);
                 return;
             }
-            List<Book> results = library.searchBook(keyword);
+
             resultModel.setRowCount(0);
+
+            // Try as book ID first (if it's a pure number)
+            try {
+                int id = Integer.parseInt(input);
+                // It's a number — use searchBook(int) — Method Overloading version 1
+                Book b = library.searchBook(id);
+                String status = b.isAvailable() ? "Available" : "All Borrowed";
+                resultModel.addRow(new Object[]{b.getBookId(), b.getTitle(), b.getAuthor(),
+                        b.getGenre(), b.getAvailableCopies(), b.getTotalCopies(), status});
+                setStatus("Found book by ID: " + b.getTitle(), true);
+                return;
+            } catch (NumberFormatException ex) {
+                // Not a number — fall through to keyword search
+            } catch (BookNotAvailableException ex) {
+                // Number but no book found — also try keyword search as fallback
+            }
+
+            // Use searchBook(String) — Method Overloading version 2
+            List<Book> results = library.searchBook(input);
             for (Book b : results) {
                 String status = b.isAvailable() ? "Available" : "All Borrowed";
                 resultModel.addRow(new Object[]{b.getBookId(), b.getTitle(), b.getAuthor(),
                         b.getGenre(), b.getAvailableCopies(), b.getTotalCopies(), status});
             }
-            setStatus("Found " + results.size() + " result(s) for '" + keyword + "'.", true);
-        });
 
-        searchById.addActionListener(e -> {
-            try {
-                int id = Integer.parseInt(idField.getText().trim());
-                Book b = library.searchBook(id);
-                resultModel.setRowCount(0);
-                String status = b.isAvailable() ? "Available" : "All Borrowed";
-                resultModel.addRow(new Object[]{b.getBookId(), b.getTitle(), b.getAuthor(),
-                        b.getGenre(), b.getAvailableCopies(), b.getTotalCopies(), status});
-                setStatus("Found book: " + b.getTitle(), true);
-            } catch (NumberFormatException ex) {
-                setStatus("Please enter a valid numeric Book ID.", false);
-            } catch (BookNotAvailableException ex) {
-                resultModel.setRowCount(0);
-                setStatus(ex.getMessage(), false);
-            } catch (Exception ex) {
-                setStatus("Error: " + ex.getMessage(), false);
+            if (results.isEmpty()) {
+                setStatus("No books found for '" + input + "'.", false);
+            } else {
+                setStatus("Found " + results.size() + " result(s) for '" + input + "'.", true);
             }
         });
+
+        // Clear button — resets search field and results table
+        clearBtn.addActionListener(e -> {
+            searchField.setText("");
+            resultModel.setRowCount(0);
+            setStatus("Search cleared.", true);
+        });
+
+        // Allow pressing Enter to search
+        searchField.addActionListener(e -> searchBtn.doClick());
 
         panel.add(searchArea, BorderLayout.CENTER);
         return panel;
@@ -567,6 +588,8 @@ public class LibraryGUI extends JFrame {
     private JTextField issueSearchField;
     private JTextField issueMemberIdField;
     private JTextArea issueResultArea;
+    private DefaultComboBoxModel<String> issueMemberComboModel;
+    private JComboBox<String> issueMemberCombo;
 
     private JPanel createIssueBookPanel() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -616,21 +639,51 @@ public class LibraryGUI extends JFrame {
         issueBookCombo.setPreferredSize(new Dimension(300, 30));
         form.add(issueBookCombo, gbc);
 
-        // Row 2: Member ID
+        // Row 2: Member ID + Member dropdown
         gbc.gridx = 0; gbc.gridy = 2;
         JLabel memberLabel = new JLabel("Member ID:");
         memberLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         form.add(memberLabel, gbc);
 
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.NONE;
-        issueMemberIdField = new JTextField(10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JPanel memberRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        memberRow.setBackground(WHITE);
+
+        issueMemberIdField = new JTextField(6);
         issueMemberIdField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        issueMemberIdField.setPreferredSize(new Dimension(120, 30));
-        form.add(issueMemberIdField, gbc);
+        issueMemberIdField.setPreferredSize(new Dimension(80, 30));
+        memberRow.add(issueMemberIdField);
+
+        JLabel orLabel = new JLabel("or select:");
+        orLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        orLabel.setForeground(new Color(120, 120, 120));
+        memberRow.add(orLabel);
+
+        issueMemberComboModel = new DefaultComboBoxModel<>();
+        issueMemberCombo = new JComboBox<>(issueMemberComboModel);
+        issueMemberCombo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        issueMemberCombo.setPreferredSize(new Dimension(200, 30));
+        memberRow.add(issueMemberCombo);
+
+        // When a member is selected from dropdown, auto-fill the ID field
+        issueMemberCombo.addActionListener(evt -> {
+            String selected = (String) issueMemberCombo.getSelectedItem();
+            if (selected != null && !selected.startsWith("--")) {
+                // Parse ID from "Name (ID: 101)"
+                int idStart = selected.lastIndexOf("(ID: ") + 5;
+                int idEnd = selected.indexOf(")", idStart);
+                if (idStart > 4 && idEnd > idStart) {
+                    issueMemberIdField.setText(selected.substring(idStart, idEnd).trim());
+                }
+            }
+        });
+
+        form.add(memberRow, gbc);
 
         // Row 3: Issue button
         gbc.gridx = 1; gbc.gridy = 3;
+        gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.EAST;
         JButton issueBtn = createActionButton("Issue Book", new Color(41, 128, 185));
         form.add(issueBtn, gbc);
@@ -661,6 +714,20 @@ public class LibraryGUI extends JFrame {
                 int bookId = Integer.parseInt(selected.substring(idStart, idEnd).trim());
 
                 int memberId = Integer.parseInt(issueMemberIdField.getText().trim());
+
+                // Confirmation dialog
+                Book preBook = library.searchBook(bookId);
+                Member preMember = library.getMember(memberId);
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        "Issue \"" + preBook.getTitle() + "\" to " + preMember.getName() + " (ID: " + memberId + ")?\n"
+                        + "Available copies: " + preBook.getAvailableCopies() + "/" + preBook.getTotalCopies(),
+                        "Confirm Issue",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE);
+                if (confirm != JOptionPane.YES_OPTION) {
+                    setStatus("Issue cancelled.", false);
+                    return;
+                }
 
                 library.issueBook(bookId, memberId);
 
@@ -702,8 +769,9 @@ public class LibraryGUI extends JFrame {
 
         panel.add(mainArea, BorderLayout.CENTER);
 
-        // Initial population of dropdown
+        // Initial population of dropdowns
         refreshIssueBookDropdown("");
+        refreshIssueMemberDropdown();
 
         return panel;
     }
@@ -730,6 +798,19 @@ public class LibraryGUI extends JFrame {
 
         if (count == 0) {
             issueBookComboModel.addElement("-- No available books found --");
+        }
+    }
+
+    /**
+     * Refresh the member dropdown with all members.
+     */
+    private void refreshIssueMemberDropdown() {
+        issueMemberComboModel.removeAllElements();
+        issueMemberComboModel.addElement("-- Select Member --");
+        List<Member> members = library.getAllMembers();
+        for (Member m : members) {
+            String entry = m.getName() + " (ID: " + m.getId() + ")";
+            issueMemberComboModel.addElement(entry);
         }
     }
 
@@ -770,6 +851,19 @@ public class LibraryGUI extends JFrame {
                 int bookId = Integer.parseInt(bookIdField.getText().trim());
                 int memberId = Integer.parseInt(memberIdField.getText().trim());
 
+                // Confirmation dialog
+                Book preBook = library.searchBook(bookId);
+                Member preMember = library.getMember(memberId);
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        "Return \"" + preBook.getTitle() + "\" from " + preMember.getName() + " (ID: " + memberId + ")?",
+                        "Confirm Return",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE);
+                if (confirm != JOptionPane.YES_OPTION) {
+                    setStatus("Return cancelled.", false);
+                    return;
+                }
+
                 library.returnBook(bookId, memberId);
 
                 Book book = library.searchBook(bookId);
@@ -802,6 +896,119 @@ public class LibraryGUI extends JFrame {
         wrapper.add(new JScrollPane(resultArea), BorderLayout.CENTER);
 
         panel.add(wrapper, BorderLayout.CENTER);
+        return panel;
+    }
+
+    // ==================== MY BOOKS PANEL ====================
+
+    private JPanel myBooksTablePanel;
+    private JTextField myBooksIdField;
+
+    private JPanel createMyBooksPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(CONTENT_BG);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        panel.add(createHeading("My Books"), BorderLayout.NORTH);
+
+        JPanel mainArea = new JPanel(new BorderLayout(0, 15));
+        mainArea.setBackground(CONTENT_BG);
+        mainArea.setBorder(new EmptyBorder(15, 0, 0, 0));
+
+        // Input row
+        JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        inputRow.setBackground(CONTENT_BG);
+
+        JLabel idLabel = new JLabel("Member ID:");
+        idLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        inputRow.add(idLabel);
+
+        myBooksIdField = new JTextField(10);
+        myBooksIdField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        myBooksIdField.setPreferredSize(new Dimension(120, 32));
+        inputRow.add(myBooksIdField);
+
+        JButton lookupBtn = createActionButton("View Borrowed Books", SIDEBAR_BTN_HOVER);
+        inputRow.add(lookupBtn);
+
+        mainArea.add(inputRow, BorderLayout.NORTH);
+
+        // Table area
+        myBooksTablePanel = new JPanel(new BorderLayout());
+        myBooksTablePanel.setBackground(CONTENT_BG);
+        mainArea.add(myBooksTablePanel, BorderLayout.CENTER);
+
+        lookupBtn.addActionListener(e -> {
+            try {
+                int memberId = Integer.parseInt(myBooksIdField.getText().trim());
+                Member member = library.getMember(memberId);
+                List<Book> borrowed = member.getBorrowedBooks();
+
+                myBooksTablePanel.removeAll();
+
+                // Member info card
+                JPanel infoCard = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 5));
+                infoCard.setBackground(WHITE);
+                infoCard.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(41, 128, 185), 1),
+                        new EmptyBorder(10, 15, 10, 15)));
+
+                JLabel nameLabel = new JLabel("Name: " + member.getName());
+                nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+                nameLabel.setForeground(TEXT_DARK);
+                infoCard.add(nameLabel);
+
+                JLabel phoneLabel = new JLabel("  |  Phone: " + member.getContact());
+                phoneLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                phoneLabel.setForeground(TEXT_DARK);
+                infoCard.add(phoneLabel);
+
+                JLabel countLabel = new JLabel("  |  Borrowed: " + borrowed.size() + "/" + member.getMaxBooks());
+                countLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                countLabel.setForeground(borrowed.size() >= member.getMaxBooks() ? ERROR_RED : SUCCESS_GREEN);
+                infoCard.add(countLabel);
+
+                // Books table
+                DefaultTableModel model = new DefaultTableModel(
+                        new String[]{"Book ID", "Title", "Author", "Genre"}, 0) {
+                    public boolean isCellEditable(int r, int c) { return false; }
+                };
+
+                for (Book b : borrowed) {
+                    model.addRow(new Object[]{b.getBookId(), b.getTitle(), b.getAuthor(), b.getGenre()});
+                }
+
+                JTable table = createStyledTable(model);
+
+                JPanel tableWrapper = new JPanel(new BorderLayout(0, 10));
+                tableWrapper.setBackground(CONTENT_BG);
+                tableWrapper.add(infoCard, BorderLayout.NORTH);
+
+                if (borrowed.isEmpty()) {
+                    JLabel emptyLabel = new JLabel("  This member has no borrowed books.");
+                    emptyLabel.setFont(new Font("Segoe UI", Font.ITALIC, 13));
+                    emptyLabel.setForeground(TEXT_DARK);
+                    emptyLabel.setBorder(new EmptyBorder(15, 0, 0, 0));
+                    tableWrapper.add(emptyLabel, BorderLayout.CENTER);
+                } else {
+                    tableWrapper.add(new JScrollPane(table), BorderLayout.CENTER);
+                }
+
+                myBooksTablePanel.add(tableWrapper, BorderLayout.CENTER);
+                myBooksTablePanel.revalidate();
+                myBooksTablePanel.repaint();
+
+                setStatus("Showing " + borrowed.size() + " book(s) for " + member.getName(), true);
+            } catch (NumberFormatException ex) {
+                setStatus("Please enter a valid numeric Member ID.", false);
+            } catch (InvalidMemberException ex) {
+                myBooksTablePanel.removeAll();
+                myBooksTablePanel.revalidate();
+                myBooksTablePanel.repaint();
+                setStatus(ex.getMessage(), false);
+            }
+        });
+
+        panel.add(mainArea, BorderLayout.CENTER);
         return panel;
     }
 
@@ -907,11 +1114,12 @@ public class LibraryGUI extends JFrame {
         } else if (name.equals("members")) {
             refreshMembersTable();
         } else if (name.equals("issueBook")) {
-            // Refresh the book dropdown when opening Issue Book panel
+            // Refresh the book and member dropdowns when opening Issue Book panel
             if (issueSearchField != null) {
                 issueSearchField.setText("");
             }
             refreshIssueBookDropdown("");
+            refreshIssueMemberDropdown();
         }
         cardLayout.show(contentPanel, name);
     }

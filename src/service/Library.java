@@ -125,7 +125,8 @@ public class Library implements LibraryOperations {
         List<Book> results = new ArrayList<>();
         for (Book book : books) {
             if (book.getTitle().toLowerCase().contains(lowerKeyword)
-                    || book.getAuthor().toLowerCase().contains(lowerKeyword)) {
+                    || book.getAuthor().toLowerCase().contains(lowerKeyword)
+                    || book.getGenre().toLowerCase().contains(lowerKeyword)) {
                 results.add(book);
             }
         }
